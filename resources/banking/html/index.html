@@ -7,14 +7,42 @@
     <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <div id="app" class="hidden">
+    <div id="hud" class="hud hidden">
+        <div>
+            <span>Cash</span>
+            <strong id="hudCash">$0</strong>
+        </div>
+        <div>
+            <span>Bank</span>
+            <strong id="hudBank">$0</strong>
+        </div>
+        <div>
+            <span>Alerts</span>
+            <strong id="hudAlerts">0</strong>
+        </div>
+    </div>
+    <button id="launcher" class="launcher hidden">
+        Banking Tablet
+        <span id="launcherBadge" class="badge hidden">0</span>
+    </button>
+    <div id="app" class="hidden" data-theme="emerald">
+        <div id="sandboxBanner" class="sandbox hidden">Sandbox / Test Mode</div>
         <div class="header">
             <div>
                 <h1>Banking Tablet</h1>
                 <p id="iban">IBAN</p>
                 <p id="tier">Tier: default</p>
             </div>
-            <button id="closeBtn">×</button>
+            <div class="header-actions">
+                <select id="themeSelect"></select>
+                <button id="tutorialBtn" type="button">Tutorial</button>
+                <button id="closeBtn" type="button">×</button>
+            </div>
+        </div>
+        <div class="tooltips">
+            <span id="feeTip"></span>
+            <span id="taxTip"></span>
+            <span id="cooldownTip"></span>
         </div>
         <div class="balances">
             <div>
@@ -29,6 +57,11 @@
                 <span>Crypto</span>
                 <strong id="crypto">$0</strong>
             </div>
+            <div class="camera-panel">
+                <h3>ATM Camera</h3>
+                <div id="cameraFeed"></div>
+                <small id="cameraMeta"></small>
+            </div>
         </div>
         <div class="grid">
             <div class="panel">
@@ -42,6 +75,7 @@
                     <input name="amount" type="text" placeholder="Amount" required />
                     <button type="submit">Withdraw</button>
                 </form>
+                <div class="quick-actions" id="withdrawActions"></div>
                 <h2>Favorites</h2>
                 <ul id="favoriteList"></ul>
                 <form id="favoriteForm">
@@ -58,6 +92,14 @@
                     <input name="pin" type="password" placeholder="PIN (required over limits)" />
                     <button type="submit">Transfer</button>
                 </form>
+                <div class="qr">
+                    <canvas id="qrCanvas" width="96" height="96"></canvas>
+                    <form id="qrForm">
+                        <input name="target" type="text" placeholder="Scan/request target" required />
+                        <input name="amount" type="text" placeholder="Amount" required />
+                        <button type="submit">Send via QR</button>
+                    </form>
+                </div>
                 <h2>History</h2>
                 <form id="historyForm">
                     <input name="page" type="number" min="1" value="1" />
@@ -66,6 +108,24 @@
                 </form>
                 <ul id="historyList"></ul>
             </div>
+            <div class="panel">
+                <h2>Scheduled Payments</h2>
+                <p class="muted">Drag to reorder execution priority.</p>
+                <ul id="scheduleList" class="schedule-list"></ul>
+            </div>
+            <div class="panel">
+                <h2>Onboarding</h2>
+                <ul id="tutorialList" class="tutorial"></ul>
+                <button id="completeTutorial" type="button">Mark step complete</button>
+            </div>
+        </div>
+    </div>
+    <div id="tutorialOverlay" class="overlay hidden">
+        <div class="overlay-content">
+            <h2>Welcome to the banking app</h2>
+            <p>Follow the steps to finish onboarding.</p>
+            <ul id="overlayTutorial"></ul>
+            <button id="closeOverlay" type="button">Close</button>
         </div>
     </div>
     <script src="app.js"></script>

@@ -34,6 +34,32 @@ local Config = {
         bank = 0,
         crypto = 0
     },
+    ui = {
+        onboarding = {
+            reward = 250,
+            steps = {
+                { id = 'welcome', title = 'Meet your banker', description = 'Learn how to open the tablet and review balances.' },
+                { id = 'deposit', title = 'Make a deposit', description = 'Move cash into the bank using the deposit panel.' },
+                { id = 'transfer', title = 'Send a transfer', description = 'Transfer funds to another player, IBAN or favorite.' },
+                { id = 'pin', title = 'Secure your PIN', description = 'Confirm your PIN from the tablet or /bankpin.' }
+            }
+        },
+        tooltips = {
+            atmFee = 'Standard ATM service fee is 1% of the withdrawn amount.',
+            withdrawalTax = 'Withdrawals incur 0.5% tax routed to the treasury.',
+            transferTax = 'Transfers incur 1% tax routed to the treasury.',
+            cooldowns = 'Most commands have a short cooldown to deter spam and automation.'
+        },
+        themes = {
+            emerald = { label = 'Emerald', primary = '#34a853', accent = '#0c1b13' },
+            midnight = { label = 'Midnight', primary = '#1c1f2b', accent = '#4b79a1' },
+            neon = { label = 'Neon', primary = '#ff2d95', accent = '#2a063c' }
+        },
+        quickActions = {
+            withdraw = { 500, 1000, 5000 },
+            deposit = { 1000, 2500, 10000 }
+        }
+    },
     currencies = {
         cash = { label = 'Cash', fractional = false },
         bank = { label = 'Bank', fractional = true },
@@ -50,11 +76,27 @@ local Config = {
         interactDistance = 1.5,
         serviceFee = 0.01,
         withdrawLimit = 5000,
+        uptime = { startHour = 6, endHour = 2 },
+        outage = { chance = 0.05, duration = { 120000, 240000 } },
+        restock = { duration = 600000 },
+        skins = { 'classic', 'modern', 'sleek' },
+        locations = {
+            { id = 'legion', label = 'Legion Square ATM', coords = { x = 150.266, y = -1040.203, z = 29.374 }, prompt = 'Tap card at Legion terminal', camera = 'BANK_CAM_01', zone = 'Downtown', signage = 'Busy downtown branch' },
+            { id = 'vinewood', label = 'Vinewood ATM', coords = { x = -1212.98, y = -330.841, z = 37.787 }, prompt = 'Use Vinewood kiosk', camera = 'BANK_CAM_02', zone = 'Vinewood', signage = 'Celebrity hotspot' },
+            { id = 'banham', label = 'Banham Canyon ATM', coords = { x = -2962.582, y = 482.627, z = 15.703 }, prompt = 'Rural ATM access', camera = 'BANK_CAM_03', zone = 'Banham', signage = 'Remote branch' },
+            { id = 'hawick', label = 'Hawick ATM', coords = { x = 314.187, y = -278.621, z = 54.170 }, prompt = 'Neighborhood ATM', camera = 'BANK_CAM_04', zone = 'Hawick', signage = 'Local traffic only' }
+        },
+        tellers = {
+            { id = 'legion_teller', model = 's_m_m_highsec_01', coords = { x = 148.74, y = -1042.36, z = 29.37, w = 340.0 }, prompt = 'Discuss finances at Legion desk' }
+        },
         robbery = {
             cooldown = 900000,
             rewardRange = { 500, 1500 },
             alertEvent = 'banking:securityAlert'
         }
+    },
+    hud = {
+        enabled = true
     },
     wires = {
         delayPerThousand = 1000,
@@ -80,7 +122,8 @@ local Config = {
     webhooks = {
         transaction = '',
         audit = '',
-        backup = ''
+        backup = '',
+        analytics = ''
     },
     history = {
         pageSize = 6
@@ -151,6 +194,7 @@ local offlineTransfers = {}
 local donationGoals = Config.donations.goals
 local lastRobberies = {}
 local accountsDirty = false
+local atmNetworkState = {}
 
 local function debugPrint(message)
     print(('[%s] %s'):format(resourceName, message))
@@ -168,6 +212,91 @@ end
 
 local function markDirty()
     accountsDirty = true
+end
+
+local function serializeSchedules(account)
+    local list = {}
+    account.scheduledPayments = account.scheduledPayments or {}
+    for id, schedule in pairs(account.scheduledPayments) do
+        list[#list + 1] = {
+            id = id,
+            target = schedule.target,
+            amount = schedule.amount,
+            remaining = schedule.remaining,
+            interval = schedule.interval,
+            nextRun = schedule.nextRun
+        }
+    end
+    table.sort(list, function(a, b)
+        if a.nextRun == b.nextRun then
+            return a.id < b.id
+        end
+        return (a.nextRun or 0) < (b.nextRun or 0)
+    end)
+    return list
+end
+
+local function computeAlerts(identifier, account)
+    local alerts = { wires = 0, loanDue = 0, donations = 0 }
+    for _, transfer in ipairs(pendingTransfers) do
+        if transfer.from == identifier then
+            alerts.wires = alerts.wires + 1
+        end
+    end
+    if account.loans and account.loans.active then
+        alerts.loanDue = math.floor(account.loans.active.remaining or 0)
+    end
+    for _, goal in pairs(donationGoals) do
+        if goal.target > 0 and goal.raised < goal.target then
+            alerts.donations = alerts.donations + 1
+        end
+    end
+    return alerts
+end
+
+local function findNearestAtmId(coords)
+    if not coords then
+        return nil
+    end
+    local nearestId
+    local closest = 999999.0
+    for _, atm in ipairs(Config.atm.locations) do
+        local dx = (atm.coords.x - coords.x)
+        local dy = (atm.coords.y - coords.y)
+        local dz = (atm.coords.z - coords.z)
+        local dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if dist < closest then
+            closest = dist
+            nearestId = atm.id
+        end
+    end
+    return nearestId
+end
+
+local function initializeAtmNetwork()
+    for _, atm in ipairs(Config.atm.locations) do
+        atmNetworkState[atm.id] = atmNetworkState[atm.id] or {
+            id = atm.id,
+            skin = Config.atm.skins[math.random(#Config.atm.skins)] or 'classic',
+            online = true,
+            queue = 0,
+            robberyRisk = 0,
+            outage = false,
+            signage = atm.signage or 'Operational',
+            restockEnds = 0
+        }
+    end
+end
+
+local function broadcastAtmNetwork(target)
+    TriggerClientEvent('banking:atmNetwork', target or -1, atmNetworkState)
+end
+
+local function syncInteractionPoints(target)
+    TriggerClientEvent('banking:syncInteractionPoints', target or -1, {
+        atms = Config.atm.locations,
+        tellers = Config.atm.tellers
+    })
 end
 
 local function formatCurrency(amount)
@@ -227,7 +356,16 @@ local function ensureAccount(identifier)
         lastLogin = os.time(),
         lastInterest = os.time(),
         overrides = {},
-        requests = {}
+        requests = {},
+        preferences = {
+            theme = 'emerald',
+            hud = true,
+            analytics = true,
+            smartwatch = true,
+            mobileApp = true,
+            sandbox = false
+        },
+        onboarding = { steps = {}, completed = false, rewarded = false }
     }
     markDirty()
     return accounts[identifier]
@@ -296,6 +434,15 @@ local function loadAccounts()
         account.lastInterest = account.lastInterest or os.time()
         account.overrides = account.overrides or {}
         account.requests = account.requests or {}
+        account.preferences = account.preferences or {}
+        account.preferences.theme = account.preferences.theme or 'emerald'
+        if account.preferences.hud == nil then account.preferences.hud = true end
+        if account.preferences.analytics == nil then account.preferences.analytics = true end
+        if account.preferences.smartwatch == nil then account.preferences.smartwatch = true end
+        if account.preferences.mobileApp == nil then account.preferences.mobileApp = true end
+        if account.preferences.sandbox == nil then account.preferences.sandbox = false end
+        account.onboarding = account.onboarding or { steps = {}, completed = false, rewarded = false }
+        account.onboarding.steps = account.onboarding.steps or {}
     end
     debugPrint(('Loaded %d accounts'):format((function(tbl) local c=0 for _ in pairs(tbl) do c=c+1 end return c end)(accounts)))
 end
@@ -304,6 +451,32 @@ CreateThread(function()
     while true do
         Wait(Config.backup.interval)
         saveAccounts()
+    end
+end)
+
+CreateThread(function()
+    initializeAtmNetwork()
+    broadcastAtmNetwork()
+    while true do
+        Wait(60000)
+        local now = GetGameTimer()
+        for _, state in pairs(atmNetworkState) do
+            if math.random() < 0.35 then
+                state.queue = math.random(0, 6)
+            end
+            state.robberyRisk = math.min(1.0, math.max(0.0, (state.robberyRisk or 0) + (math.random() - 0.5) * 0.1))
+            if not state.outage and math.random() < Config.atm.outage.chance then
+                state.outage = true
+                state.online = false
+                local duration = math.random(Config.atm.outage.duration[1], Config.atm.outage.duration[2])
+                state.restockEnds = now + duration
+            elseif state.outage and now >= (state.restockEnds or 0) then
+                state.outage = false
+                state.online = true
+                state.skin = Config.atm.skins[math.random(#Config.atm.skins)] or state.skin
+            end
+        end
+        broadcastAtmNetwork()
     end
 end)
 
@@ -337,7 +510,18 @@ local function sendBalances(src, reason)
         crypto = account.balances.crypto,
         history = account.history,
         iban = account.iban,
-        tier = account.tier
+        tier = account.tier,
+        schedules = serializeSchedules(account),
+        preferences = account.preferences,
+        onboarding = account.onboarding,
+        tooltips = Config.ui.tooltips,
+        themes = Config.ui.themes,
+        quickActions = Config.ui.quickActions,
+        cooldowns = Config.cooldowns,
+        taxes = { withdraw = Config.taxes.withdraw, transfer = Config.taxes.transfer },
+        atmMeta = { fee = Config.atm.serviceFee, withdrawLimit = Config.atm.withdrawLimit },
+        tutorialSteps = Config.ui.onboarding.steps,
+        alerts = computeAlerts(identifier, account)
     })
     TriggerEvent('banking:balanceUpdated', src, account.balances.cash, account.balances.bank, reason or 'update')
 end
@@ -643,6 +827,8 @@ AddEventHandler('playerJoining', function()
     TriggerClientEvent('banking:setLocale', src, Config.localization.default)
     sendBalances(src, 'join')
     TriggerClientEvent('banking:setFavorites', src, account.favorites)
+    syncInteractionPoints(src)
+    broadcastAtmNetwork(src)
 end)
 
 AddEventHandler('playerDropped', function()
@@ -658,6 +844,12 @@ end)
 
 RegisterNetEvent('banking:requestBalance', function(reason)
     sendBalances(source, reason or 'clientRequest')
+end)
+
+RegisterNetEvent('banking:requestWorldData', function()
+    local src = source
+    syncInteractionPoints(src)
+    broadcastAtmNetwork(src)
 end)
 
 RegisterNetEvent('banking:notifyDonationGoal', function(goalId)
@@ -693,6 +885,90 @@ RegisterNetEvent('banking:atmRobbery', function(coords)
     dispatchNotification(src, ('You stole %s. Expect attention!'):format(formatCurrency(reward)))
     sendBalances(src, 'atmRobbery')
     TriggerEvent(Config.atm.robbery.alertEvent, src, coords, reward)
+    local atmId = findNearestAtmId(coords)
+    if atmId and atmNetworkState[atmId] then
+        local state = atmNetworkState[atmId]
+        state.online = false
+        state.outage = true
+        state.robberyRisk = 1.0
+        state.restockEnds = now + Config.atm.restock.duration
+        broadcastAtmNetwork()
+    end
+end)
+
+RegisterNetEvent('banking:updatePreference', function(payload)
+    local src = source
+    local identifier = getIdentifier(src)
+    local account = ensureAccount(identifier)
+    account.preferences = account.preferences or {}
+    for key, value in pairs(payload or {}) do
+        account.preferences[key] = value
+    end
+    markDirty()
+    sendBalances(src, 'preferences')
+end)
+
+RegisterNetEvent('banking:completeTutorial', function(stepId)
+    local src = source
+    local identifier = getIdentifier(src)
+    local account = ensureAccount(identifier)
+    account.onboarding = account.onboarding or { steps = {}, completed = false, rewarded = false }
+    account.onboarding.steps = account.onboarding.steps or {}
+    if stepId == 'complete' then
+        for _, step in ipairs(Config.ui.onboarding.steps) do
+            account.onboarding.steps[step.id] = true
+        end
+    elseif stepId then
+        account.onboarding.steps[stepId] = true
+    end
+    local totalSteps = #Config.ui.onboarding.steps
+    local completed = 0
+    for _, step in ipairs(Config.ui.onboarding.steps) do
+        if account.onboarding.steps[step.id] then
+            completed = completed + 1
+        end
+    end
+    if completed >= totalSteps then
+        account.onboarding.completed = true
+        if not account.onboarding.rewarded then
+            account.onboarding.rewarded = true
+            account.balances.cash = account.balances.cash + Config.ui.onboarding.reward
+            pushHistory(identifier, 'tutorial_reward', Config.ui.onboarding.reward, 'Onboarding reward')
+            dispatchNotification(src, ('Tutorial complete! Bonus %s added.'):format(formatCurrency(Config.ui.onboarding.reward)))
+        end
+    end
+    markDirty()
+    sendBalances(src, 'tutorial')
+end)
+
+RegisterNetEvent('banking:reorderSchedules', function(order)
+    local src = source
+    local identifier = getIdentifier(src)
+    local account = ensureAccount(identifier)
+    if type(order) ~= 'table' then
+        return
+    end
+    local reordered = {}
+    for _, id in ipairs(order) do
+        if account.scheduledPayments[id] then
+            reordered[id] = account.scheduledPayments[id]
+        end
+    end
+    for id, entry in pairs(account.scheduledPayments) do
+        if not reordered[id] then
+            reordered[id] = entry
+        end
+    end
+    account.scheduledPayments = reordered
+    markDirty()
+    sendBalances(src, 'scheduleReorder')
+end)
+
+RegisterNetEvent('banking:uiAnalytics', function(payload)
+    payload = payload or {}
+    payload.player = getIdentifier(source)
+    payload.timestamp = os.time()
+    sendWebhook(Config.webhooks.analytics, payload)
 end)
 
 local function canUseBiometrics(src)
@@ -1034,6 +1310,32 @@ RegisterCommand('banktransfer', function(src, args)
     if not success and message then
         dispatchNotification(src, message)
     end
+end)
+
+RegisterCommand('bankmanager', function(src, args)
+    if src ~= 0 and not IsPlayerAceAllowed(src, 'banking.manager') then
+        dispatchNotification(src, 'You need the banking.manager ace to toggle ATMs.')
+        return
+    end
+    local atmId = args[1]
+    if not atmId or not atmNetworkState[atmId] then
+        dispatchNotification(src, 'Usage: /bankmanager <atm id> [online|offline]')
+        return
+    end
+    local state = atmNetworkState[atmId]
+    local desired = args[2]
+    if desired == 'online' then
+        state.online = true
+        state.outage = false
+    elseif desired == 'offline' then
+        state.online = false
+        state.outage = true
+    else
+        state.online = not state.online
+        state.outage = not state.online
+    end
+    broadcastAtmNetwork()
+    dispatchNotification(src, ('ATM %s is now %s'):format(atmId, state.online and 'online' or 'offline'))
 end)
 
 RegisterNetEvent('banking:uiAction', function(action, payload)

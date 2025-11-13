@@ -6,6 +6,9 @@ A feature-packed, standalone banking system for FiveM servers that now includes 
 
 - **Immersive UI:** Open the in-game tablet (F6 or `/bankmenu`) or walk up to the configured ATMs/tellers to manage accounts via NUI instead of chat spam.
 - **ATM gameplay:** Service fees and withdraw limits, robbery/hacking hooks (`H` near an ATM), contextual biometric/PIN checks, and events (`banking:atmUsage`) for other scripts.
+- **Guided onboarding:** First-time players see a narrated tutorial with contextual tooltips, PIN reminders, and a completion reward.
+- **Customizable look & feel:** Multiple tablet themes, controller-friendly navigation, quick-action radials, QR transfers, and live ATM camera feeds adapt the UI to any faction or lore style.
+- **Ambient HUD & alerts:** A compact HUD widget mirrors balances while tablet badges flag pending wires, overdue loans, and donation pushes.
 - **Economic depth:** Timed wire transfers, scheduled payments, donation goals, crowdfunding, configurable taxes, transaction cooldowns/limits, offline transfers, fractional currency support, and server-tier overrides.
 - **Accounts everywhere:** Personal cash/bank/crypto wallets, shared business accounts, ATM treasury, scheduled autopay, savings interest (even while offline), overdraft/loan systems, favorites, achievements, and tiered perks.
 - **Staff tooling:** `/bankgive`, `/bankset`, `/bankfine`, `/banktier`, `/bankdashboard`, `/bankaudit`, transaction webhooks/backups, webhook-ready alerts for high value moves, and Discord-ready payloads.
@@ -55,6 +58,7 @@ The resource ships with a minimal web UI (`html/`) referenced by the manifest—
 - `/banktier <id> <tier>` — Assign VIP tiers defined in `Config.serviceTiers` (ACE: `command.banktier`).
 - `/bankdashboard` — Aggregate cash/bank totals (ACE: `command.bankdashboard`).
 - `/bankaudit <identifier>` — Push full balance/history payloads to the configured webhook (ACE: `command.bankaudit`).
+- `/bankmanager <atm id> [online|offline]` — Toggle or inspect ATM uptime windows and signage (ACE: `banking.manager`).
 - `bankreload` — Console-only JSON reload.
 
 ## Exports & helpers
@@ -84,6 +88,7 @@ Nearly every system has knobs inside `server/main.lua`'s `Config` table:
 - `localization` — Language + strings.
 - `startingBalances` / `currencies` — Default cash/bank/crypto values.
 - `atm` — Interact distance, withdraw limits, service fees, robbery rewards, teller ped coordinates.
+- `ui` — Tutorial steps, tooltips, HUD defaults, quick-action amounts, and tablet themes.
 - `wires`, `scheduledPayments`, `sharedAccounts` — Limits and intervals for automation features.
 - `taxes`, `savings`, `loans`, `overdraft`, `donations`, `achievements`, `serviceTiers` — Economic tuning.
 - `cooldowns`, `limits`, `notifications`, `webhooks`, `backup` — Anti-abuse + auditing hooks.
@@ -93,9 +98,12 @@ Adjust the values to match your server economy, add/remove ATMs, teller NPCs, do
 ## UI & interactions
 
 - F6 (or `/bankmenu`) opens the tablet anywhere.
+- `/mobilebank` opens the reduced “phone banking” flow when enabled in account preferences.
 - E near the provided ATM coordinates opens the UI with ATM context (fees, biometric gates).
 - H near an ATM triggers the robbery mini-hook (server fires `Config.atm.robbery.alertEvent`).
 - E near the spawned teller ped opens the banker UI with no fees.
+- Drag scheduled payments inside the tablet to reorder execution priority and broadcast the change instantly to the server.
+- Hover the tooltip row for fees/taxes/cooldowns, switch tablet themes from the dropdown, or rely on the HUD widget to check balances without opening the full UI.
 
 The NUI is intentionally lightweight so you can re-skin it if desired; the HTML/JS files live in `resources/banking/html/` and can be customized freely.
 
