@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Banking Tablet</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div id="app" class="hidden">
+        <div class="header">
+            <div>
+                <h1>Banking Tablet</h1>
+                <p id="iban">IBAN</p>
+                <p id="tier">Tier: default</p>
+            </div>
+            <button id="closeBtn">×</button>
+        </div>
+        <div class="balances">
+            <div>
+                <span>Cash</span>
+                <strong id="cash">$0</strong>
+            </div>
+            <div>
+                <span>Bank</span>
+                <strong id="bank">$0</strong>
+            </div>
+            <div>
+                <span>Crypto</span>
+                <strong id="crypto">$0</strong>
+            </div>
+        </div>
+        <div class="grid">
+            <div class="panel">
+                <h2>Deposit</h2>
+                <form id="depositForm">
+                    <input name="amount" type="text" placeholder="Amount" required />
+                    <button type="submit">Deposit</button>
+                </form>
+                <h2>Withdraw</h2>
+                <form id="withdrawForm">
+                    <input name="amount" type="text" placeholder="Amount" required />
+                    <button type="submit">Withdraw</button>
+                </form>
+                <h2>Favorites</h2>
+                <ul id="favoriteList"></ul>
+                <form id="favoriteForm">
+                    <input name="name" type="text" placeholder="Nickname" required />
+                    <input name="target" type="text" placeholder="Player id / IBAN" required />
+                    <button type="submit">Save Favorite</button>
+                </form>
+            </div>
+            <div class="panel">
+                <h2>Transfer</h2>
+                <form id="transferForm">
+                    <input name="target" type="text" placeholder="Player id / IBAN / favorite" required />
+                    <input name="amount" type="text" placeholder="Amount" required />
+                    <input name="pin" type="password" placeholder="PIN (required over limits)" />
+                    <button type="submit">Transfer</button>
+                </form>
+                <h2>History</h2>
+                <form id="historyForm">
+                    <input name="page" type="number" min="1" value="1" />
+                    <input name="filter" type="text" placeholder="Filter (deposit, withdraw...)" />
+                    <button type="submit">Fetch</button>
+                </form>
+                <ul id="historyList"></ul>
+            </div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
